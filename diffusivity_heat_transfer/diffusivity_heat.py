@@ -151,15 +151,3 @@ for i in range(len(snapshots)):
 
 plotter.show()
 plotter.close()
-
-# Desmarcar para descargar como archivo .gif
-
-#lector = imageio.get_reader("heat_evolution.mp4")
-#escritor = imageio.get_writer("heat_evolution.gif", fps=15, loop=0)
-
-#for cuadro in lector:
-
-	#escritor.append_data(cuadro)
-
-#lector.close()
-#escritor.close()
