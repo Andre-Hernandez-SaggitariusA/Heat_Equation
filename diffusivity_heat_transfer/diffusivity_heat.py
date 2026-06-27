@@ -39,7 +39,7 @@ pz = (alpha*dt)/(dz*dz)
 
 # Hilos de paralelización OMP
 
-hilos = 4
+hilos = 6
 
 # Generación de la matriz vacía
 
