@@ -28,8 +28,8 @@ dz = Lz / Nz
 # Parámetros de avance temporal
 
 dt = 0.95 * (dx*dx*dy*dy*dz*dz)/(2*alpha*(dy*dy*dz*dz + dx*dx*dz*dz + dx*dx*dy*dy))
-t_final = 5000
-snapshot_interval = 5
+t_final = 6000
+snapshot_interval = 500
 
 # Pesos de los cálculos
 
@@ -39,7 +39,7 @@ pz = (alpha*dt)/(dz*dz)
 
 # Hilos de paralelización OMP
 
-hilos = 6
+hilos = 8
 
 # Generación de la matriz vacía
 
@@ -55,10 +55,10 @@ def xyz(i, j, k, Nx=Nx, Ny=Ny, Nz=Nz):
 
 # Condiciones de generación de calor
 
-def aplicar_calor(u,t):
+def aplicar_calor(u, t):
 	
 	for i in range(0, Nx+1):
-		u[xyz(i, 5, 5)] += 5000
+		u[xyz(i, 5, 5)] += 10
 
 # Evolución con el tiempo
 
@@ -75,7 +75,6 @@ for n in range(int(t_final/dt) + 1):
 
 	# Guardar snapshots
 
-
 	if n % snapshot_interval == 0 :
 		snapshots.append(np.copy(u))
 		tiempos.append(n*dt)
@@ -88,7 +87,7 @@ for n in range(int(t_final/dt) + 1):
 
 t1 = time.perf_counter()
 
-print(t1-t0)
+print(f"Tiempo de cálculo: {(t1-t0):.3f} s")
 
 # Generación de malla
 

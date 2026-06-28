@@ -8,16 +8,22 @@
 
 namespace py = pybind11;
 
-int xyz(int Nx, int Ny, int Nz, int i, int j, int k){
-
-	int ijk = k * (Ny + 1) * (Nx + 1) + j * (Nx + 1) + i;
-	return ijk;
-}
-
-void actualizar(int Nx, int Ny, int Nz, double px, double py, double pz, py::array_t<double> u_py, py::array_t<double> u_new_py, int hilos){
+void actualizar(int Nx,
+		int Ny,
+		int Nz,
+		double px,
+		double py,
+		double pz,
+		py::array_t<double> u_py,
+		py::array_t<double> u_new_py,
+		int hilos){
 		
 	py::buffer_info u_new_b = u_new_py.request();
 	py::buffer_info u_b = u_py.request();
+	
+	int s_k = (Ny + 1) * (Nx + 1);
+	int s_j = (Nx + 1);
+	double c = 1 - 2*px - 2*py - 2*pz;
 	
 	double *u_new = static_cast<double *>(u_new_b.ptr);
 	double *u = static_cast<double *>(u_b.ptr);
@@ -27,405 +33,246 @@ void actualizar(int Nx, int Ny, int Nz, double px, double py, double pz, py::arr
 	#pragma omp parallel num_threads(hilos)
 	{
 	
-	#pragma omp for collapse(3)
+	#pragma omp for collapse(2) nowait
 	for(int k = 1; k < Nz; k++){
 		for(int j = 1; j < Ny; j++){
+		
+			int base = k*s_k + j*s_j;
+		
+			#pragma omp simd
 			for(int i = 1; i < Nx; i++){
 			
-			int central = xyz(Nx, Ny, Nz, i, j, k);
-			int v_ip = xyz(Nx, Ny, Nz, i+1, j, k);
-			int v_im = xyz(Nx, Ny, Nz, i-1, j, k);
-			int v_jp = xyz(Nx, Ny, Nz, i, j+1, k);
-			int v_jm = xyz(Nx, Ny, Nz, i, j-1, k);
-			int v_kp = xyz(Nx, Ny, Nz, i, j, k+1);
-			int v_km = xyz(Nx, Ny, Nz, i, j, k-1);
+				int p = base + i;
 			
-			// Interior
-			u_new[central] = (1 - 2*px - 2*py - 2*pz)*u[central]
-				+ px*(u[v_ip] + u[v_im])
-				+ py*(u[v_jp] + u[v_jm])
-				+ pz*(u[v_kp] + u[v_km]);
-			
+				// Interior
+				
+				u_new[p] = c*u[p]
+					+ px*(u[p + 1] + u[p - 1])
+					+ py*(u[p + s_j] + u[p - s_j])
+					+ pz*(u[p + s_k] + u[p - s_k]);
 			}
 		}	
 	}
 	
-	#pragma omp for collapse(2)
+	#pragma omp for collapse(2) nowait
 	for(int j = 1; j < Ny; j++){
 		for(int i = 1; i < Nx; i++){
-			
-			int central_0 = xyz(Nx, Ny, Nz, i, j, 0);
-			int v_ip_0 = xyz(Nx, Ny, Nz, i+1, j, 0);
-			int v_im_0 = xyz(Nx, Ny, Nz, i-1, j, 0);
-			int v_jp_0 = xyz(Nx, Ny, Nz, i, j+1, 0);
-			int v_jm_0 = xyz(Nx, Ny, Nz, i, j-1, 0);
-			int v_k_0 = xyz(Nx, Ny, Nz, i, j, 1);
 			
 			// Base
 				
-			u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-				+ px*(u[v_ip_0] + u[v_im_0])
-				+ py*(u[v_jp_0] + u[v_jm_0])
-				+ 2*pz*u[v_k_0];
-				
-			int central_Nz = xyz(Nx, Ny, Nz, i, j, Nz);
-			int v_ip_Nz = xyz(Nx, Ny, Nz, i+1, j, Nz);
-			int v_im_Nz = xyz(Nx, Ny, Nz, i-1, j, Nz);
-			int v_jp_Nz = xyz(Nx, Ny, Nz, i, j+1, Nz);
-			int v_jm_Nz = xyz(Nx, Ny, Nz, i, j-1, Nz);
-			int v_k_Nz = xyz(Nx, Ny, Nz, i, j, Nz-1);
+			u_new[0*s_k + j*s_j + i] = c*u[0*s_k + j*s_j + i]
+				+ px*(u[0*s_k + j*s_j + (i+1)] + u[0*s_k + j*s_j + (i-1)])
+				+ py*(u[0*s_k + (j+1)*s_j + i] + u[0*s_k + (j-1)*s_j + i])
+				+ 2*pz*u[1*s_k + j*s_j + i];
 				
 			// Tapa	
 			
-			u_new[central_Nz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nz]
-				+ px*(u[v_ip_Nz] + u[v_im_Nz])
-				+ py*(u[v_jp_Nz] + u[v_jm_Nz])
-				+ 2*pz*u[v_k_Nz];
+			u_new[Nz*s_k + j*s_j + i] = c*u[Nz*s_k + j*s_j + i]
+				+ px*(u[Nz*s_k + j*s_j + (i+1)] + u[Nz*s_k + j*s_j + (i-1)])
+				+ py*(u[Nz*s_k + (j+1)*s_j + i] + u[Nz*s_k + (j-1)*s_j + i])
+				+ 2*pz*u[(Nz-1)*s_k + j*s_j + i];
 		}
 	}
 	
-	#pragma omp for collapse(2)
+	#pragma omp for collapse(2) nowait
 	for(int k = 1; k < Nz; k++){
 		for(int i = 1; i < Nx; i++){
-		
-			int central_0 = xyz(Nx, Ny, Nz, i, 0, k);
-			int v_ip_0 = xyz(Nx, Ny, Nz, i+1, 0, k);
-			int v_im_0 = xyz(Nx, Ny, Nz, i-1, 0, k);
-			int v_kp_0 = xyz(Nx, Ny, Nz, i, 0, k+1);
-			int v_km_0 = xyz(Nx, Ny, Nz, i, 0, k-1);
-			int v_j_0 = xyz(Nx, Ny, Nz, i, 1, k);
 			
 			// Cara Trasera
 			
-			u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-				+ px*(u[v_ip_0] + u[v_im_0])
-				+ 2*py*u[v_j_0]
-				+ pz*(u[v_kp_0] + u[v_km_0]);
-			
-			int central_Ny = xyz(Nx, Ny, Nz, i, Ny, k);
-			int v_ip_Ny = xyz(Nx, Ny, Nz, i+1, Ny, k);
-			int v_im_Ny = xyz(Nx, Ny, Nz, i-1, Ny, k);
-			int v_kp_Ny = xyz(Nx, Ny, Nz, i, Ny, k+1);
-			int v_km_Ny = xyz(Nx, Ny, Nz, i, Ny, k-1);
-			int v_j_Ny = xyz(Nx, Ny, Nz, i, Ny-1, k);
+			u_new[k*s_k + 0*s_j + i] = c*u[k*s_k + 0*s_j + i]
+				+ px*(u[k*s_k + 0*s_j + (i+1)] + u[k*s_k + 0*s_j + (i-1)])
+				+ 2*py*u[k*s_k + 1*s_j + i]
+				+ pz*(u[(k+1)*s_k + 0*s_j + i] + u[(k-1)*s_k + 0*s_j + i]);
 			
 			// Cara Posterior
 			
-			u_new[central_Ny] = (1 - 2*px - 2*py - 2*pz)*u[central_Ny]
-				+ px*(u[v_ip_Ny] + u[v_im_Ny])
-				+ 2*py*u[v_j_Ny]
-				+ pz*(u[v_kp_Ny] + u[v_km_Ny]);
+			u_new[k*s_k + Ny*s_j + i] = c*u[k*s_k + Ny*s_j + i]
+				+ px*(u[k*s_k + Ny*s_j + (i+1)] + u[k*s_k + Ny*s_j + (i-1)])
+				+ 2*py*u[k*s_k + (Ny-1)*s_j + i]
+				+ pz*(u[(k+1)*s_k + Ny*s_j + i] + u[(k-1)*s_k + Ny*s_j + i]);
 				
 		}
 	}
 	
-	#pragma omp for collapse(2)
+	#pragma omp for collapse(2) nowait
 	for(int k = 1; k < Nz; k++){
 		for(int j = 1; j < Ny; j++){
 		
-			int central_0 = xyz(Nx, Ny, Nz, 0, j, k);
-			int v_jp_0 = xyz(Nx, Ny, Nz, 0, j+1, k);
-			int v_jm_0 = xyz(Nx, Ny, Nz, 0, j-1, k);
-			int v_kp_0 = xyz(Nx, Ny, Nz, 0, j, k+1);
-			int v_km_0 = xyz(Nx, Ny, Nz, 0, j, k-1);
-			int v_i_0 = xyz(Nx, Ny, Nz, 1, j, k);
-		
 			// Cara Izquierda	
 			
-			u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-				+ 2*px*u[v_i_0]
-				+ py*(u[v_jp_0] + u[v_jm_0])
-				+ pz*(u[v_kp_0] + u[v_km_0]);
-			
-			int central_Nx = xyz(Nx, Ny, Nz, Nx, j, k);
-			int v_jp_Nx = xyz(Nx, Ny, Nz, Nx, j+1, k);
-			int v_jm_Nx = xyz(Nx, Ny, Nz, Nx, j-1, k);
-			int v_kp_Nx = xyz(Nx, Ny, Nz, Nx, j, k+1);
-			int v_km_Nx = xyz(Nx, Ny, Nz, Nx, j, k-1);
-			int v_i_Nx = xyz(Nx, Ny, Nz, Nx-1, j, k);
+			u_new[k*s_k + j*s_j + 0] = c*u[k*s_k + j*s_j + 0]
+				+ 2*px*u[k*s_k + j*s_j + 1]
+				+ py*(u[k*s_k + (j+1)*s_j + 0] + u[k*s_k + (j-1)*s_j + 0])
+				+ pz*(u[(k+1)*s_k + j*s_j + 0] + u[(k-1)*s_k + j*s_j + 0]);
 			
 			// Cara Derecha
 			
-			u_new[central_Nx] = (1 - 2*px - 2*py - 2*pz)*u[central_Nx]
-				+ 2*px*u[v_i_Nx]
-				+ py*(u[v_jp_Nx] + u[v_jm_Nx])
-				+ pz*(u[v_kp_Nx] + u[v_km_Nx]);
+			u_new[k*s_k + j*s_j + Nx] = c*u[k*s_k + j*s_j + Nx]
+				+ 2*px*u[k*s_k + j*s_j + (Nx-1)]
+				+ py*(u[k*s_k + (j+1)*s_j + Nx] + u[k*s_k + (j-1)*s_j + Nx])
+				+ pz*(u[(k+1)*s_k + j*s_j + Nx] + u[(k-1)*s_k + j*s_j + Nx]);
 				
 		}
 	}
 	
-	#pragma omp for
+	#pragma omp for nowait
 	for(int i = 1; i < Nx; i++){
-		
-		int central_0 = xyz(Nx, Ny, Nz, i, 0, 0);
-		int v_ip_0 = xyz(Nx, Ny, Nz, i+1, 0, 0);
-		int v_im_0 = xyz(Nx, Ny, Nz, i-1, 0, 0);
-		int v_j_0 = xyz(Nx, Ny, Nz, i, 1, 0);
-		int v_k_0 = xyz(Nx, Ny, Nz, i, 0, 1);
 		
 		// Arista trasera inferior
 		
-		u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-			+ px*(u[v_ip_0] + u[v_im_0])
-			+ 2*py*u[v_j_0]
-			+ 2*pz*u[v_k_0];
-		
-		int central_Ny = xyz(Nx, Ny, Nz, i, Ny, 0);
-		int v_ip_Ny = xyz(Nx, Ny, Nz, i+1, Ny, 0);
-		int v_im_Ny = xyz(Nx, Ny, Nz, i-1, Ny, 0);
-		int v_j_Ny = xyz(Nx, Ny, Nz, i, Ny-1, 0);
-		int v_k_Ny = xyz(Nx, Ny, Nz, i, Ny, 1);
+		u_new[0*s_k + 0*s_j + i] = c*u[0*s_k + 0*s_j + i]
+			+ px*(u[0*s_k + 0*s_j + (i+1)] + u[0*s_k + 0*s_j + (i-1)])
+			+ 2*py*u[0*s_k + 1*s_j + i]
+			+ 2*pz*u[1*s_k + 0*s_j + i];
 		
 		// Arista posterior inferior
 		
-		u_new[central_Ny] = (1 - 2*px - 2*py - 2*pz)*u[central_Ny]
-			+ px*(u[v_ip_Ny] + u[v_im_Ny])
-			+ 2*py*u[v_j_Ny]
-			+ 2*pz*u[v_k_Ny];
-			
-		int central_Nz = xyz(Nx, Ny, Nz, i, 0, Nz);
-		int v_ip_Nz = xyz(Nx, Ny, Nz, i+1, 0, Nz);
-		int v_im_Nz = xyz(Nx, Ny, Nz, i-1, 0, Nz);
-		int v_j_Nz = xyz(Nx, Ny, Nz, i, 1, Nz);
-		int v_k_Nz = xyz(Nx, Ny, Nz, i, 0, Nz-1);
+		u_new[0*s_k + Ny*s_j + i] = c*u[0*s_k + Ny*s_j + i]
+			+ px*(u[0*s_k + Ny*s_j + (i+1)] + u[0*s_k + Ny*s_j + (i-1)])
+			+ 2*py*u[0*s_k + (Ny-1)*s_j + i]
+			+ 2*pz*u[1*s_k + Ny*s_j + i];
 			
 		// Arista trasera superior
 			
-		u_new[central_Nz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nz]
-			+ px*(u[v_ip_Nz] + u[v_im_Nz])
-			+ 2*py*u[v_j_Nz]
-			+ 2*pz*u[v_k_Nz];
-		
-		int central_Nyz = xyz(Nx, Ny, Nz, i, Ny, Nz);
-		int v_ip_Nyz = xyz(Nx, Ny, Nz, i+1, Ny, Nz);
-		int v_im_Nyz = xyz(Nx, Ny, Nz, i-1, Ny, Nz);
-		int v_j_Nyz = xyz(Nx, Ny, Nz, i, Ny-1, Nz);
-		int v_k_Nyz = xyz(Nx, Ny, Nz, i, Ny, Nz-1);
+		u_new[Nz*s_k + 0*s_j + i] = c*u[Nz*s_k + 0*s_j + i]
+			+ px*(u[Nz*s_k + 0*s_j + (i+1)] + u[Nz*s_k + 0*s_j + (i-1)])
+			+ 2*py*u[Nz*s_k + 1*s_j + i]
+			+ 2*pz*u[(Nz-1)*s_k + 0*s_j + i];
 		
 		// Arista posterior superior
 		
-		u_new[central_Nyz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nyz]
-			+ px*(u[v_ip_Nyz] + u[v_im_Nyz])
-			+ 2*py*u[v_j_Nyz]
-			+ 2*pz*u[v_k_Nyz];
+		u_new[Nz*s_k + Ny*s_j + i] = c*u[Nz*s_k + Ny*s_j + i]
+			+ px*(u[Nz*s_k + Ny*s_j + (i+1)] + u[Nz*s_k + Ny*s_j + (i-1)])
+			+ 2*py*u[Nz*s_k + (Ny-1)*s_j + i]
+			+ 2*pz*u[(Nz-1)*s_k + Ny*s_j + i];
 	}
 	
-	#pragma omp for
+	#pragma omp for nowait
 	for(int j = 1; j < Ny; j++){
-		
-		int central_0 = xyz(Nx, Ny, Nz, 0, j, 0);
-		int v_jp_0 = xyz(Nx, Ny, Nz, 0, j+1, 0);
-		int v_jm_0 = xyz(Nx, Ny, Nz, 0, j-1, 0);
-		int v_i_0 = xyz(Nx, Ny, Nz, 1, j, 0);
-		int v_k_0 = xyz(Nx, Ny, Nz, 0, j, 1);
 		
 		// Arista inferior izquierda
 		
-		u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-			+ 2*px*u[v_i_0]
-			+ py*(u[v_jp_0] + u[v_jm_0])
-			+ 2*pz*u[v_k_0];
-		
-		int central_Nx = xyz(Nx, Ny, Nz, Nx, j, 0);
-		int v_jp_Nx = xyz(Nx, Ny, Nz, Nx, j+1, 0);
-		int v_jm_Nx = xyz(Nx, Ny, Nz, Nx, j-1, 0);
-		int v_i_Nx = xyz(Nx, Ny, Nz, Nx-1, j, 0);
-		int v_k_Nx = xyz(Nx, Ny, Nz, Nx, j, 1);
+		u_new[0*s_k + j*s_j + 0] = c*u[0*s_k + j*s_j + 0]
+			+ 2*px*u[0*s_k + j*s_j + 1]
+			+ py*(u[0*s_k + (j+1)*s_j + 0] + u[0*s_k + (j-1)*s_j + 0])
+			+ 2*pz*u[1*s_k + j*s_j + 0];
 		
 		// Arista inferior derecha
 		
-		u_new[central_Nx] = (1 - 2*px - 2*py - 2*pz)*u[central_Nx]
-			+ 2*px*u[v_i_Nx]
-			+ py*(u[v_jp_Nx] + u[v_jm_Nx])
-			+ 2*pz*u[v_k_Nx];
-			
-		int central_Nz = xyz(Nx, Ny, Nz, 0, j, Nz);
-		int v_jp_Nz = xyz(Nx, Ny, Nz, 0, j+1, Nz);
-		int v_jm_Nz = xyz(Nx, Ny, Nz, 0, j-1, Nz);
-		int v_i_Nz = xyz(Nx, Ny, Nz, 1, j, Nz);
-		int v_k_Nz = xyz(Nx, Ny, Nz, 0, j, Nz-1);	
+		u_new[0*s_k + j*s_j + Nx] = c*u[0*s_k + j*s_j + Nx]
+			+ 2*px*u[0*s_k + j*s_j + (Nx-1)]
+			+ py*(u[0*s_k + (j+1)*s_j + Nx] + u[0*s_k + (j-1)*s_j + Nx])
+			+ 2*pz*u[1*s_k + j*s_j + Nx];	
 		
 		// Arista superior izquierda
 		
-		u_new[central_Nz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nz]
-			+ 2*px*u[v_i_Nz]
-			+ py*(u[v_jp_Nz] + u[v_jm_Nz])
-			+ 2*pz*u[v_k_Nz];
-		
-		int central_Nxz = xyz(Nx, Ny, Nz, Nx, j, Nz);
-		int v_jp_Nxz = xyz(Nx, Ny, Nz, Nx, j+1, Nz);
-		int v_jm_Nxz = xyz(Nx, Ny, Nz, Nx, j-1, Nz);
-		int v_i_Nxz = xyz(Nx, Ny, Nz, Nx-1, j, Nz);
-		int v_k_Nxz = xyz(Nx, Ny, Nz, Nx, j, Nz-1);
+		u_new[Nz*s_k + j*s_j + 0] = c*u[Nz*s_k + j*s_j + 0]
+			+ 2*px*u[Nz*s_k + j*s_j + 1]
+			+ py*(u[Nz*s_k + (j+1)*s_j + 0] + u[Nz*s_k + (j-1)*s_j + 0])
+			+ 2*pz*u[(Nz-1)*s_k + j*s_j + 0];
 		
 		// Arista superior derecha
 		
-		u_new[central_Nxz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nxz]
-			+ 2*px*u[v_i_Nxz]
-			+ py*(u[v_jp_Nxz] + u[v_jm_Nxz])
-			+ 2*pz*u[v_k_Nxz];
+		u_new[Nz*s_k + j*s_j + Nx] = c*u[Nz*s_k + j*s_j + Nx]
+			+ 2*px*u[Nz*s_k + j*s_j + (Nx-1)]
+			+ py*(u[Nz*s_k + (j+1)*s_j + Nx] + u[Nz*s_k + (j-1)*s_j + Nx])
+			+ 2*pz*u[(Nz-1)*s_k + j*s_j + Nx];
 	}
 	
-	#pragma omp for
+	#pragma omp for nowait
 	for(int k = 1; k < Nz; k++){
-		
-		int central_0 = xyz(Nx, Ny, Nz, 0, 0, k);
-		int v_kp_0 = xyz(Nx, Ny, Nz, 0, 0, k+1);
-		int v_km_0 = xyz(Nx, Ny, Nz, 0, 0, k-1);
-		int v_i_0 = xyz(Nx, Ny, Nz, 1, 0, k);
-		int v_j_0 = xyz(Nx, Ny, Nz, 0, 1, k);
 		
 		// Arista izquierda trasera
 		
-		u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-			+ 2*px*u[v_i_0]
-			+ 2*py*u[v_j_0]
-			+ pz*(u[v_kp_0] + u[v_km_0]);
-		
-		int central_Nx = xyz(Nx, Ny, Nz, Nx, 0, k);
-		int v_kp_Nx = xyz(Nx, Ny, Nz, Nx, 0, k+1);
-		int v_km_Nx = xyz(Nx, Ny, Nz, Nx, 0, k-1);
-		int v_i_Nx = xyz(Nx, Ny, Nz, Nx-1, 0, k);
-		int v_j_Nx = xyz(Nx, Ny, Nz, Nx, 1, k);
+		u_new[k*s_k + 0*s_j + 0] = c*u[k*s_k + 0*s_j + 0]
+			+ 2*px*u[k*s_k + 0*s_j + 1]
+			+ 2*py*u[k*s_k + 1*s_j + 0]
+			+ pz*(u[(k+1)*s_k + 0*s_j + 0] + u[(k-1)*s_k + 0*s_j + 0]);
 		
 		// Arista derecha trasera
 		
-		u_new[central_Nx] = (1 - 2*px - 2*py - 2*pz)*u[central_Nx]
-			+ 2*px*u[v_i_Nx]
-			+ 2*py*u[v_j_Nx]
-			+ pz*(u[v_kp_Nx] + u[v_km_Nx]);
-			
-		int central_Ny = xyz(Nx, Ny, Nz, 0, Ny, k);
-		int v_kp_Ny = xyz(Nx, Ny, Nz, 0, Ny, k+1);
-		int v_km_Ny = xyz(Nx, Ny, Nz, 0, Ny, k-1);
-		int v_i_Ny = xyz(Nx, Ny, Nz, 1, Ny, k);
-		int v_j_Ny = xyz(Nx, Ny, Nz, 0, Ny-1, k);
+		u_new[k*s_k + 0*s_j + Nx] = c*u[k*s_k + 0*s_j + Nx]
+			+ 2*px*u[k*s_k + 0*s_j + (Nx-1)]
+			+ 2*py*u[k*s_k + 1*s_j + Nx]
+			+ pz*(u[(k+1)*s_k + 0*s_j + Nx] + u[(k-1)*s_k + 0*s_j + Nx]);
 			
 		// Arista izquierda posterior
 		
-		u_new[central_Ny] = (1 - 2*px - 2*py - 2*pz)*u[central_Ny]
-			+ 2*px*u[v_i_Ny]
-			+ 2*py*u[v_j_Ny]
-			+ pz*(u[v_kp_Ny] + u[v_km_Ny]);
-		
-		int central_Nxy = xyz(Nx, Ny, Nz, Nx, Ny, k);
-		int v_kp_Nxy = xyz(Nx, Ny, Nz, Nx, Ny, k+1);
-		int v_km_Nxy = xyz(Nx, Ny, Nz, Nx, Ny, k-1);
-		int v_i_Nxy = xyz(Nx, Ny, Nz, Nx-1, Ny, k);
-		int v_j_Nxy = xyz(Nx, Ny, Nz, Nx, Ny-1, k);
+		u_new[k*s_k + Ny*s_j + 0] = c*u[k*s_k + Ny*s_j + 0]
+			+ 2*px*u[k*s_k + Ny*s_j + 1]
+			+ 2*py*u[k*s_k + (Ny-1)*s_j + 0]
+			+ pz*(u[(k+1)*s_k + Ny*s_j + 0] + u[(k-1)*s_k + Ny*s_j + 0]);
 		
 		// Arista derecha posterior
 		
-		u_new[central_Nxy] = (1 - 2*px - 2*py - 2*pz)*u[central_Nxy]
-			+ 2*px*u[v_i_Nxy]
-			+ 2*py*u[v_j_Nxy]
-			+ pz*(u[v_kp_Nxy] + u[v_km_Nxy]);
+		u_new[k*s_k + Ny*s_j + Nx] = c*u[k*s_k + Ny*s_j + Nx]
+			+ 2*px*u[k*s_k + Ny*s_j + (Nx-1)]
+			+ 2*py*u[k*s_k + (Ny-1)*s_j + Nx]
+			+ pz*(u[(k+1)*s_k + Ny*s_j + Nx] + u[(k-1)*s_k + Ny*s_j + Nx]);
 	}
 	
-	#pragma omp single
+	#pragma omp single nowait
 	{
-	
-	int central_0 = xyz(Nx, Ny, Nz, 0, 0, 0);
-	int v_i_0 = xyz(Nx, Ny, Nz, 1, 0, 0);
-	int v_j_0 = xyz(Nx, Ny, Nz, 0, 1, 0);
-	int v_k_0 = xyz(Nx, Ny, Nz, 0, 0, 1);
 	
 	// Esquina izquierda inferior trasera
 	
-	u_new[central_0] = (1 - 2*px - 2*py - 2*pz)*u[central_0]
-			+ 2*px*u[v_i_0]
-			+ 2*py*u[v_j_0]
-			+ 2*pz*u[v_k_0];
-	
-	int central_Nx = xyz(Nx, Ny, Nz, Nx, 0, 0);
-	int v_i_Nx = xyz(Nx, Ny, Nz, Nx-1, 0, 0);
-	int v_j_Nx = xyz(Nx, Ny, Nz, Nx, 1, 0);
-	int v_k_Nx = xyz(Nx, Ny, Nz, Nx, 0, 1);
-	
+	u_new[0*s_k + 0*s_j + 0] = c*u[0*s_k + 0*s_j + 0]
+			+ 2*px*u[0*s_k + 0*s_j + 1]
+			+ 2*py*u[0*s_k + 1*s_j + 0]
+			+ 2*pz*u[1*s_k + 0*s_j + 0];
+
 	// Esquina derecha inferior trasera
 	
-	u_new[central_Nx] = (1 - 2*px - 2*py - 2*pz)*u[central_Nx]
-			+ 2*px*u[v_i_Nx]
-			+ 2*py*u[v_j_Nx]
-			+ 2*pz*u[v_k_Nx];
-		
-	int central_Ny = xyz(Nx, Ny, Nz, 0, Ny, 0);
-	int v_i_Ny = xyz(Nx, Ny, Nz, 1, Ny, 0);
-	int v_j_Ny = xyz(Nx, Ny, Nz, 0, Ny-1, 0);
-	int v_k_Ny = xyz(Nx, Ny, Nz, 0, Ny, 1);
+	u_new[0*s_k + 0*s_j + Nx] = c*u[0*s_k + 0*s_j + Nx]
+			+ 2*px*u[0*s_k + 0*s_j + (Nx-1)]
+			+ 2*py*u[0*s_k + 1*s_j + Nx]
+			+ 2*pz*u[1*s_k + 0*s_j + Nx];
 			
 	// Esquina izquierda inferior posterior
 	
-	u_new[central_Ny] = (1 - 2*px - 2*py - 2*pz)*u[central_Ny]
-			+ 2*px*u[v_i_Ny]
-			+ 2*py*u[v_j_Ny]
-			+ 2*pz*u[v_k_Ny];
-	
-	int central_Nz = xyz(Nx, Ny, Nz, 0, 0, Nz);
-	int v_i_Nz = xyz(Nx, Ny, Nz, 1, 0, Nz);
-	int v_j_Nz = xyz(Nx, Ny, Nz, 0, 1, Nz);
-	int v_k_Nz = xyz(Nx, Ny, Nz, 0, 0, Nz-1);
+	u_new[0*s_k + Ny*s_j + 0] = c*u[0*s_k + Ny*s_j + 0]
+			+ 2*px*u[0*s_k + Ny*s_j + 1]
+			+ 2*py*u[0*s_k + (Ny-1)*s_j + 0]
+			+ 2*pz*u[1*s_k + Ny*s_j + 0];
 	
 	// Esquina izquierda superior trasera
 	
-	u_new[central_Nz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nz]
-			+ 2*px*u[v_i_Nz]
-			+ 2*py*u[v_j_Nz]
-			+ 2*pz*u[v_k_Nz];
-	
-	int central_Nxy = xyz(Nx, Ny, Nz, Nx, Ny, 0);
-	int v_i_Nxy = xyz(Nx, Ny, Nz, Nx-1, Ny, 0);
-	int v_j_Nxy = xyz(Nx, Ny, Nz, Nx, Ny-1, 0);
-	int v_k_Nxy = xyz(Nx, Ny, Nz, Nx, Ny, 1);
+	u_new[Nz*s_k + 0*s_j + 0] = c*u[Nz*s_k + 0*s_j + 0]
+			+ 2*px*u[Nz*s_k + 0*s_j + 1]
+			+ 2*py*u[Nz*s_k + 1*s_j + 0]
+			+ 2*pz*u[(Nz-1)*s_k + 0*s_j + 0];
 	
 	// Esquina derecha inferior posterior
 	
-	u_new[central_Nxy] = (1 - 2*px - 2*py - 2*pz)*u[central_Nxy]
-			+ 2*px*u[v_i_Nxy]
-			+ 2*py*u[v_j_Nxy]
-			+ 2*pz*u[v_k_Nxy];
-	
-	int central_Nxz = xyz(Nx, Ny, Nz, Nx, 0, Nz);
-	int v_i_Nxz = xyz(Nx, Ny, Nz, Nx-1, 0, Nz);
-	int v_j_Nxz = xyz(Nx, Ny, Nz, Nx, 1, Nz);
-	int v_k_Nxz = xyz(Nx, Ny, Nz, Nx, 0, Nz-1);
+	u_new[0*s_k + Ny*s_j + Nx] = c*u[0*s_k + Ny*s_j + Nx]
+			+ 2*px*u[0*s_k + Ny*s_j + (Nx-1)]
+			+ 2*py*u[0*s_k + (Ny-1)*s_j + Nx]
+			+ 2*pz*u[1*s_k + Ny*s_j + Nx];
 	
 	// Esquina derecha superior trasera
 	
-	u_new[central_Nxz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nxz]
-			+ 2*px*u[v_i_Nxz]
-			+ 2*py*u[v_j_Nxz]
-			+ 2*pz*u[v_k_Nxz];
-	
-	int central_Nyz = xyz(Nx, Ny, Nz, 0, Ny, Nz);
-	int v_i_Nyz = xyz(Nx, Ny, Nz, 1, Ny, Nz);
-	int v_j_Nyz = xyz(Nx, Ny, Nz, 0, Ny-1, Nz);
-	int v_k_Nyz = xyz(Nx, Ny, Nz, 0, Ny, Nz-1);
+	u_new[Nz*s_k + 0*s_j + Nx] = c*u[Nz*s_k + 0*s_j + Nx]
+			+ 2*px*u[Nz*s_k + 0*s_j + (Nx-1)]
+			+ 2*py*u[Nz*s_k + 1*s_j + Nx]
+			+ 2*pz*u[(Nz-1)*s_k + 0*s_j + Nx];
 	
 	// Esquina izquierda superior posterior
 	
-	u_new[central_Nyz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nyz]
-			+ 2*px*u[v_i_Nyz]
-			+ 2*py*u[v_j_Nyz]
-			+ 2*pz*u[v_k_Nyz];
-	
-	int central_Nxyz = xyz(Nx, Ny, Nz, Nx, Ny, Nz);
-	int v_i_Nxyz = xyz(Nx, Ny, Nz, Nx-1, Ny, Nz);
-	int v_j_Nxyz = xyz(Nx, Ny, Nz, Nx, Ny-1, Nz);
-	int v_k_Nxyz = xyz(Nx, Ny, Nz, Nx, Ny, Nz-1);
+	u_new[Nz*s_k + Ny*s_j + 0] = c*u[Nz*s_k + Ny*s_j + 0]
+			+ 2*px*u[Nz*s_k + Ny*s_j + 1]
+			+ 2*py*u[Nz*s_k + (Ny-1)*s_j + 0]
+			+ 2*pz*u[(Nz-1)*s_k + Ny*s_j + 0];
 	
 	// Esquina derecha superior posterior
 	
-	u_new[central_Nxyz] = (1 - 2*px - 2*py - 2*pz)*u[central_Nxyz]
-			+ 2*px*u[v_i_Nxyz]
-			+ 2*py*u[v_j_Nxyz]
-			+ 2*pz*u[v_k_Nxyz];
+	u_new[Nz*s_k + Ny*s_j + Nx] = c*u[Nz*s_k + Ny*s_j + Nx]
+			+ 2*px*u[Nz*s_k + Ny*s_j + (Nx-1)]
+			+ 2*py*u[Nz*s_k + (Ny-1)*s_j + Nx]
+			+ 2*pz*u[(Nz-1)*s_k + Ny*s_j + Nx];
 	
 	}	
 	}
-	
-	pybind11::gil_scoped_acquire acquire;
-	
 }
 
 PYBIND11_MODULE(difusividad, m) {
