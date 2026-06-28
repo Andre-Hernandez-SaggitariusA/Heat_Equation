@@ -1,4 +1,3 @@
-# Hola
 # Difusividad Calor 3D
 
 # Librerías importadas
@@ -18,9 +17,9 @@ alpha = 2.2e-5
 
 # Partición de malla
 
-Nx = 50
-Ny = 50
-Nz = 50
+Nx = 100
+Ny = 100
+Nz = 100
 
 dx = Lx / Nx
 dy = Ly / Ny
@@ -29,8 +28,8 @@ dz = Lz / Nz
 # Parámetros de avance temporal
 
 dt = 0.95 * (dx*dx*dy*dy*dz*dz)/(2*alpha*(dy*dy*dz*dz + dx*dx*dz*dz + dx*dx*dy*dy))
-t_final = 6000
-snapshot_interval = 500
+t_final = 8000
+snapshot_interval = 100
 
 # Pesos de los cálculos
 
@@ -47,19 +46,17 @@ hilos = 8
 u = np.zeros((Nx + 1, Ny + 1, Nz + 1)).flatten()
 u_new = np.zeros((Nx + 1, Ny + 1, Nz + 1)).flatten()
 
-# Función para moverse por índices de matriz aplanada
+# Saltos de eje para moverse entre la matriz 1D
 
-def xyz(i, j, k, Nx=Nx, Ny=Ny, Nz=Nz):
-
-	ijk = k * (Ny + 1) * (Nx + 1) + j * (Nx + 1) + i
-	return ijk
+s_k = (Ny + 1) * (Nx + 1)
+s_j = (Nx + 1)
 
 # Condiciones de generación de calor
 
 def aplicar_calor(u, t):
 	
 	for i in range(0, Nx+1):
-		u[xyz(i, 5, 5)] += 10
+		u[25*s_k + 25*s_j + i] += 10
 
 # Evolución con el tiempo
 
@@ -118,6 +115,8 @@ maximo = np.max(snapshots)
 
 # Generación de video
 
+t0 = time.perf_counter()
+
 point_cloud = pv.PolyData(puntos.astype(np.float32))
 
 point_cloud["calor"] = snapshots[0]
@@ -142,12 +141,23 @@ plotter.add_mesh(
 plotter.view_isometric()
 plotter.add_axes()
 
+t1 = time.perf_counter()
+
+print(f"Tiempo de generación de simulación: {(t1-t0):.3f} s")
+
+
 # Actualización de temperaturas en animación
+
+t0 = time.perf_counter()
 
 for i in range(len(snapshots)):
 	
 	point_cloud["calor"] = snapshots[i]
 	plotter.write_frame()
+
+t1 = time.perf_counter()
+
+print(f"Tiempo de simulación: {(t1-t0):.3f} s")
 
 plotter.show()
 plotter.close()
