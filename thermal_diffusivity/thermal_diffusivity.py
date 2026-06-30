@@ -17,9 +17,9 @@ alpha = 2.2e-5
 
 # Partición de malla
 
-Nx = 70
-Ny = 70
-Nz = 70
+Nx = 60
+Ny = 60
+Nz = 60
 
 dx = Lx / Nx
 dy = Ly / Ny
@@ -43,8 +43,8 @@ hilos = 8
 
 # Generación de la matriz vacía
 
-u = np.zeros((Nx + 1, Ny + 1, Nz + 1)).flatten()
-u_new = np.zeros((Nx + 1, Ny + 1, Nz + 1)).flatten()
+u = np.zeros((Nx + 1) * (Ny + 1) * (Nz + 1))
+u_new = np.zeros((Nx + 1) * (Ny + 1) * (Nz + 1))
 
 # Saltos de eje para moverse entre la matriz 1D
 
@@ -73,7 +73,7 @@ for n in range(int(t_final/dt) + 1):
 
 	# Guardar snapshots
 
-	if n % snapshot_interval == 0 :
+	if (snapshot_interval > 0) and (n % snapshot_interval == 0):
 		snapshots.append(u.astype(np.float32).copy())
 		tiempos.append(n*dt)
 
@@ -87,77 +87,80 @@ t1 = time.perf_counter()
 
 print(f"Tiempo de cálculo: {(t1-t0):.3f} s")
 
-# Generación de malla
+if snapshot_interval != 0:
 
-x, y, z = np.meshgrid(np.arange(Nx+1), np.arange(Ny+1), np.arange(Nz+1), indexing="ij")
+	# Generación de malla
 
-x = x.flatten(order="F")
-y = y.flatten(order="F")
-z = z.flatten(order="F")
+	x, y, z = np.meshgrid(np.arange(Nx+1), np.arange(Ny+1), np.arange(Nz+1), indexing="ij")
 
-puntos = np.vstack((x, y, z)).T
+	x = x.flatten(order="F")
+	y = y.flatten(order="F")
+	z = z.flatten(order="F")
 
-# Parámetros de barra informativa
+	puntos = np.vstack((x, y, z)).T
 
-barra = {
-	"title": "Temperatura",
-	"vertical": True,
-	"position_x": 0.90,
-	"position_y": 0.15,
-	"width": 0.04,
-	"height": 0.70
-	}
+	# Parámetros de barra informativa
 
-# Temperatura máxima y mínima alcanzada
+	barra = {
+		"title": "Temperatura",
+		"vertical": True,
+		"position_x": 0.90,
+		"position_y": 0.15,
+		"width": 0.04,
+		"height": 0.70
+		}
 
-minimo = np.min(snapshots)
-maximo = np.max(snapshots)
+	# Temperatura máxima y mínima alcanzada
 
-# Generación de video
+	minimo = np.min(snapshots)
+	maximo = np.max(snapshots)
 
-t0 = time.perf_counter()
+	# Generación de video
 
-point_cloud = pv.PolyData(puntos.astype(np.float32))
+	t0 = time.perf_counter()
 
-point_cloud["calor"] = snapshots[0]
-plotter = pv.Plotter()
+	point_cloud = pv.PolyData(puntos.astype(np.float32))
 
-plotter.open_movie("difusividad_termica.mp4", framerate=5)
-
-# Características de la simulación
-
-plotter.add_mesh(
-	point_cloud,
-	style="points",
-	point_size=15.0,
-	render_points_as_spheres=False,
-	scalars="calor",
-	cmap="hot",
-	clim=[minimo, maximo],
-	opacity=[0.0, 1.0],
-	scalar_bar_args=barra
-	)
+	point_cloud["calor"] = snapshots[0]
 	
-plotter.view_isometric()
-plotter.add_axes()
+	plotter = pv.Plotter()
 
-t1 = time.perf_counter()
+	plotter.open_movie("difusividad_termica.mp4", framerate=5)
 
-print(f"Tiempo de generación de simulación: {(t1-t0):.3f} s")
+	# Características de la simulación
 
-
-# Actualización de temperaturas en animación
-
-t0 = time.perf_counter()
-
-for i in range(len(snapshots)):
+	plotter.add_mesh(
+		point_cloud,
+		style="points",
+		point_size=15.0,
+		render_points_as_spheres=False,
+		scalars="calor",
+		cmap="hot",
+		clim=[minimo, maximo],
+		opacity=[0.0, 1.0],
+		scalar_bar_args=barra
+		)
 	
-	point_cloud["calor"] = snapshots[i]
-	plotter.write_frame()
+	plotter.view_isometric()
+	plotter.add_axes()
 
-t1 = time.perf_counter()
+	t1 = time.perf_counter()
 
-print(f"Tiempo de simulación: {(t1-t0):.3f} s")
+	print(f"Tiempo de generación de simulación: {(t1-t0):.3f} s")
 
-plotter.show()
-plotter.close()
+
+	# Actualización de temperaturas en animación
+
+	t0 = time.perf_counter()
+
+	for i in range(len(snapshots)):
+	
+		point_cloud["calor"] = snapshots[i]
+		plotter.write_frame()
+
+	t1 = time.perf_counter()
+
+	print(f"Tiempo de simulación: {(t1-t0):.3f} s")
+
+	plotter.show()
+	plotter.close()
