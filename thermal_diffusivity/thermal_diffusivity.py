@@ -17,9 +17,9 @@ alpha = 2.2e-5
 
 # Partición de malla
 
-Nx = 100
-Ny = 100
-Nz = 100
+Nx = 70
+Ny = 70
+Nz = 70
 
 dx = Lx / Nx
 dy = Ly / Ny
@@ -28,8 +28,8 @@ dz = Lz / Nz
 # Parámetros de avance temporal
 
 dt = 0.95 * (dx*dx*dy*dy*dz*dz)/(2*alpha*(dy*dy*dz*dz + dx*dx*dz*dz + dx*dx*dy*dy))
-t_final = 8000
-snapshot_interval = 100
+t_final = 4000
+snapshot_interval = 10
 
 # Pesos de los cálculos
 
@@ -56,7 +56,7 @@ s_j = (Nx + 1)
 def aplicar_calor(u, t):
 	
 	for i in range(0, Nx+1):
-		u[25*s_k + 25*s_j + i] += 10
+		u[25*s_k + 25*s_j + i] = 10
 
 # Evolución con el tiempo
 
@@ -74,7 +74,7 @@ for n in range(int(t_final/dt) + 1):
 	# Guardar snapshots
 
 	if n % snapshot_interval == 0 :
-		snapshots.append(np.copy(u))
+		snapshots.append(u.astype(np.float32).copy())
 		tiempos.append(n*dt)
 
 	# Actualizar la matriz con funcion de calor.cpp
